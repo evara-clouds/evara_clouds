@@ -1,5 +1,5 @@
 ### Hi there 👋
->learning to code ardruino
+>learning CUDA Programming
 >I'm currently learning cyber security
 
 
