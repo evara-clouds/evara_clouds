@@ -128,3 +128,25 @@ int main(void) {
     printf("\nSimulation complete.\n");
     return 0;
 }
+/*
++----------------------------+
+| Virtual Sensors            |
+|  - Temperature()           |
+|  - Pressure()              |
+|  - Flow()                  |
++-------------+--------------+
+              |
+              v
++----------------------------+
+| Circular Buffer            |
+|  (stores last N readings)  |
++-------------+--------------+
+              |
+              v
++----------------------------+
+| Display/Logger             |
+|  - Print buffer contents   |
+|  - Show memory usage       |
++----------------------------+
+
+*/
