@@ -1,7 +1,6 @@
 ### Hi there 👋
->learning C language
->I'm currently ......
-
+>Using C language for...
+>Memory management
 
 
 
