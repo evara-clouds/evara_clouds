@@ -14,3 +14,9 @@ build/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Archives
+*.zip
+*.tar.gz
+*.bundle
+
