@@ -1,3 +1,16 @@
+# Build artifacts
+build/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+
+# IDE noise
 .vscode/
-.vscode/
-.vscode/
+*.log
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
