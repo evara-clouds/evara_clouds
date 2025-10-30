@@ -1,0 +1,27 @@
+#include "scheduler.h"
+#include <stdio.h>
+
+void task_sensor(void) {
+    printf("[T1] Sensor read\n");
+}
+
+void task_uart(void) {
+    printf("[T2] UART send\n");
+}
+
+void task_logger(void) {
+    printf("[T3] Logging data\n");
+}
+
+int main(void) {
+    printf("=== Cooperative Scheduler Demo ===\n");
+
+    scheduler_init();
+    scheduler_add(task_sensor, 5);  // every 5 ms
+    scheduler_add(task_uart, 10);   // every 10 ms
+    scheduler_add(task_logger, 20); // every 20 ms
+
+    scheduler_run(); // runs forever
+    return 0;
+}
+

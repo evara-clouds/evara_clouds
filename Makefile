@@ -1,4 +1,3 @@
-# Compiler settings
 CC      := gcc
 CFLAGS  := -Wall -Wextra -std=c99 -I firmware/inc
 
@@ -6,7 +5,7 @@ CFLAGS  := -Wall -Wextra -std=c99 -I firmware/inc
 BUILD_DIR := build
 
 # Default target
-.PHONY: all clean run
+.PHONY: all clean run example2_static example_scheduler
 
 # Default build: scheduler demo
 all: $(BUILD_DIR)/scheduler_demo
@@ -23,6 +22,13 @@ example2_static:
 	@echo "Running static memory allocator demo..."
 	@./$(BUILD_DIR)/example2_static
 
+# Example 3: cooperative scheduler
+example_scheduler:
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I examples/scheduler examples/scheduler/*.c -o $(BUILD_DIR)/scheduler_demo
+	@echo "Running cooperative scheduler demo..."
+	@./$(BUILD_DIR)/scheduler_demo
+
 # Run the scheduler demo
 run: all
 	@echo "Running scheduler demo..."
@@ -32,4 +38,3 @@ run: all
 clean:
 	@echo "Cleaning build directory..."
 	rm -rf $(BUILD_DIR)
-

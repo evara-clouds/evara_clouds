@@ -1,20 +1,13 @@
 #include "scheduler.h"
 #include <stdio.h>
-#include <unistd.h>
 
-void task_led(void)   { printf("[Task] LED Blink\n"); }
-void task_sensor(void){ printf("[Task] Read Sensor\n"); }
-void task_log(void)   { printf("[Task] Log Data\n"); }
+void led_task(void)   { static int s=0; printf("[LED] toggle %d\n", s++); }
+void temp_task(void)  { printf("[TEMP] read sensor\n"); }
 
 int main(void) {
     scheduler_init();
-    scheduler_add(0, task_led, 100);
-    scheduler_add(1, task_sensor, 200);
-    scheduler_add(2, task_log, 500);
-
-    while (1) {
-        scheduler_tick();
-        scheduler_dispatch();
-        usleep(1000); // 1 ms tick simulation
-    }
+    scheduler_add(led_task, 100);   // every 100 ms
+    scheduler_add(temp_task, 250);  // every 250 ms
+    scheduler_run();
+    return 0;
 }
