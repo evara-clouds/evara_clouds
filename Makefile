@@ -1,17 +1,35 @@
-CC = gcc
-CFLAGS = -Wall -I firmware/inc
+# Compiler settings
+CC      := gcc
+CFLAGS  := -Wall -Wextra -std=c99 -I firmware/inc
 
-SRC = firmware/src/scheduler.c examples/scheduler/main.c
-OUT = build/scheduler_demo
+# Output directories
+BUILD_DIR := build
 
-all: $(OUT)
+# Default target
+.PHONY: all clean run
 
-$(OUT): $(SRC)
-	mkdir -p build
+# Default build: scheduler demo
+all: $(BUILD_DIR)/scheduler_demo
+
+# Example scheduler demo
+$(BUILD_DIR)/scheduler_demo: firmware/src/scheduler.c examples/scheduler/main.c
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $^ -o $@
 
-run: all
-	./$(OUT)
+# Example 2: static memory allocator
+example2_static:
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) firmware/src/mem_pool.c examples/memory/example2_static/main.c -o $(BUILD_DIR)/example2_static
+	@echo "Running static memory allocator demo..."
+	@./$(BUILD_DIR)/example2_static
 
+# Run the scheduler demo
+run: all
+	@echo "Running scheduler demo..."
+	@./$(BUILD_DIR)/scheduler_demo
+
+# Clean all builds
 clean:
-	rm -rf build
+	@echo "Cleaning build directory..."
+	rm -rf $(BUILD_DIR)
+
