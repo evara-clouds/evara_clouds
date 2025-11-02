@@ -2,109 +2,151 @@
 
 #include "scheduler.h"
 #include <stdio.h>
-#include <time.h>    // for nanosleep()
+#include <time.h>
+#include <signal.h>
+#include <string.h>
+#include <inttypes.h>
 #include <stdint.h>
-#include <signal.h>   // for signal handling
-#include <stdatomic.h> // for atomic flag (optional, cleaner)
 
+static TaskControlBlock tasks[SCHED_MAX_TASKS];
+static size_t task_count = 0;
+
+/* runtime accounting */
+static uint64_t total_ticks = 0;     /* number of 1ms ticks seen */
+static uint64_t active_ticks = 0;    /* ticks where >=1 task ran */
 static volatile sig_atomic_t keep_running = 1;
 
-void handle_sigint(int sig) {
+/* helper: monotonic now in ns */
+static inline uint64_t now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+void scheduler_init(void) {
+    memset(tasks, 0, sizeof(tasks));
+    task_count = 0;
+    total_ticks = 0;
+    active_ticks = 0;
+}
+
+/* add task; returns id or -1 */
+int scheduler_add(TaskFunc f, uint32_t period_ms) {
+    if (!f || task_count >= SCHED_MAX_TASKS) return -1;
+    tasks[task_count].func = f;
+    tasks[task_count].period_ms = period_ms;
+    tasks[task_count].time_left = period_ms;
+    tasks[task_count].state = TASK_STATE_READY;
+    tasks[task_count].run_count = 0;
+    tasks[task_count].runtime_ns = 0;
+    return (int)task_count++;
+}
+
+void scheduler_enable(size_t task_id) {
+    if (task_id < task_count) tasks[task_id].state = TASK_STATE_READY;
+}
+
+void scheduler_disable(size_t task_id) {
+    if (task_id < task_count) tasks[task_id].state = TASK_STATE_DISABLED;
+}
+
+/* decrement time-left for active tasks (1 ms tick) */
+void scheduler_tick(void) {
+    for (size_t i = 0; i < task_count; ++i) {
+        if (tasks[i].state == TASK_STATE_READY && tasks[i].time_left > 0) {
+            tasks[i].time_left--;
+        }
+    }
+}
+
+/* internal single step: run ready tasks whose time_left == 0,
+   measure per-task execution time and update counters */
+static void scheduler_step_once(void) {
+    int ran_any = 0;
+
+    for (size_t i = 0; i < task_count; ++i) {
+        if (tasks[i].state == TASK_STATE_READY && tasks[i].time_left == 0) {
+            tasks[i].state = TASK_STATE_RUNNING;
+
+            uint64_t t0 = now_ns();
+            tasks[i].func();
+            uint64_t t1 = now_ns();
+
+            tasks[i].run_count++;
+            tasks[i].runtime_ns += (t1 - t0);
+
+            tasks[i].time_left = tasks[i].period_ms;
+            tasks[i].state = TASK_STATE_READY;
+            ran_any = 1;
+        }
+    }
+
+    if (ran_any) active_ticks++;
+}
+
+/* compute CPU load (percentage of ticks where something ran) */
+float scheduler_cpu_load(void) {
+    if (total_ticks == 0) return 0.0f;
+    return (float)active_ticks * 100.0f / (float)total_ticks;
+}
+
+size_t scheduler_num_tasks(void) {
+    return task_count;
+}
+
+/* run deterministic for duration_ms milliseconds */
+void scheduler_run_for(uint32_t duration_ms) {
+    struct timespec ts = {0, 1000000}; /* 1ms */
+
+    uint32_t ticks_to_run = duration_ms;
+    total_ticks = 0;
+    active_ticks = 0;
+
+    printf("Scheduler: running for %u ms | tasks: %zu\n", duration_ms, task_count);
+
+    for (uint32_t tick = 0; tick < ticks_to_run; ++tick) {
+        scheduler_step_once();
+        scheduler_tick();
+        nanosleep(&ts, NULL);
+        total_ticks++;
+    }
+
+    printf("Simulation complete. Ticks: %lu | Active ticks: %lu | CPU load: %.2f%%\n",
+           (unsigned long)total_ticks, (unsigned long)active_ticks, scheduler_cpu_load());
+    /* print per-task stats */
+    for (size_t i = 0; i < task_count; ++i) {
+        printf("Task %zu: runs=%" PRIu64 " total_runtime_ms=%.3f\n",
+               i, tasks[i].run_count, tasks[i].runtime_ns / 1e6);
+    }
+}
+
+/* SIGINT handler to stop scheduler_run() */
+static void handle_sigint(int sig) {
     (void)sig;
     keep_running = 0;
 }
 
-static Task tasks[MAX_TASKS];
-static uint32_t num_tasks = 0;
-
-/**
- * Initialize the scheduler by clearing all tasks.
- */
-void scheduler_init(void) {
-    for (uint32_t i = 0; i < MAX_TASKS; ++i) {
-        tasks[i].active = 0;
-    }
-    num_tasks = 0;
-}
-
-/**
- * Add a task to the scheduler with a given execution period (in ms).
- */
-int scheduler_add(TaskFunc func, uint32_t period_ms) {
-    if (num_tasks >= MAX_TASKS) return -1;
-
-    tasks[num_tasks].task = func;
-    tasks[num_tasks].period_ms = period_ms;
-    tasks[num_tasks].time_left = period_ms;
-    tasks[num_tasks].active = 1;
-
-    num_tasks++;
-    return 0;
-}
-
-/**
- * Decrement the countdown timers of all active tasks.
- */
-void scheduler_tick(void) {
-    for (uint32_t i = 0; i < num_tasks; ++i) {
-        if (tasks[i].active && tasks[i].time_left > 0)
-            tasks[i].time_left--;
-    }
-}
-void scheduler_enable_task(uint32_t id) {
-    if (id < num_tasks) tasks[id].active = 1;
-}
-
-void scheduler_disable_task(uint32_t id) {
-    if (id < num_tasks) tasks[id].active = 0;
-}
-
-/**
- * Cooperative scheduler main loop.
- * Each tick = 1 ms (simulated using nanosleep).
- */
 void scheduler_run(void) {
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 1000000;  // 1 ms
+    struct timespec ts = {0, 1000000}; /* 1ms */
+    total_ticks = 0;
+    active_ticks = 0;
+    keep_running = 1;
 
-    printf("=== Cooperative RTOS Simulation ===\n");
-    printf("Tick: 1 ms | Tasks: %u\n\n", num_tasks);
+    signal(SIGINT, handle_sigint);
 
-    while (1) {
-        for (uint32_t i = 0; i < num_tasks; ++i) {
-            if (tasks[i].active && tasks[i].time_left == 0) {
-                tasks[i].task();
-                tasks[i].time_left = tasks[i].period_ms;
-            }
-        }
+    printf("Scheduler: running until SIGINT (Ctrl+C) | tasks: %zu\n", task_count);
 
+    while (keep_running) {
+        scheduler_step_once();
         scheduler_tick();
-        nanosleep(&ts, NULL);  // 1 ms simulated delay
-uint64_t total_ticks = 0;
-uint64_t active_ticks = 0;
-
-while (keep_running) {
-    total_ticks++;
-    uint8_t any_run = 0;
-
-    for (uint32_t i = 0; i < num_tasks; ++i) {
-        if (tasks[i].active && tasks[i].time_left == 0) {
-            tasks[i].task();
-            tasks[i].time_left = tasks[i].period_ms;
-            tasks[i].run_count++;
-            any_run = 1;
-        }
+        nanosleep(&ts, NULL);
+        total_ticks++;
     }
 
-    if (any_run) active_ticks++;
-
-    scheduler_tick();
-    nanosleep(&ts, NULL);
-}
-
-float cpu_load = (float)active_ticks / total_ticks * 100.0f;
-printf("Scheduler stopped. CPU load: %.2f%%\n", cpu_load);
+    printf("\nScheduler stopped. Ticks: %lu | Active ticks: %lu | CPU load: %.2f%%\n",
+           (unsigned long)total_ticks, (unsigned long)active_ticks, scheduler_cpu_load());
+    for (size_t i = 0; i < task_count; ++i) {
+        printf("Task %zu: runs=%" PRIu64 " total_runtime_ms=%.3f\n",
+               i, tasks[i].run_count, tasks[i].runtime_ns / 1e6);
     }
 }
-
